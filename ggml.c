@@ -1528,13 +1528,40 @@ inline static void ggml_vec_dot_f16(const int n, float * restrict s, ggml_fp16_t
     GGML_F16_VEC ax[GGML_F16_ARR];
     GGML_F16_VEC ay[GGML_F16_ARR];
 
+
+    //ASDFG
     for (int i = 0; i < np; i += GGML_F16_STEP) {
+	const int pnst = 4;
+	if (i < np - (pnst * GGML_F16_STEP)) {
+	    __builtin_prefetch(x + i + pnst * GGML_F16_STEP + 0*GGML_F16_EPR);
+	    __builtin_prefetch(y + i + pnst * GGML_F16_STEP + 0*GGML_F16_EPR);
+        }
+#if GGML_F16_ARR == 4
+        ax[0] = GGML_F16_VEC_LOAD(x + i + 0*GGML_F16_EPR, 0);
+        ax[1] = GGML_F16_VEC_LOAD(x + i + 1*GGML_F16_EPR, 1);
+
+        ay[0] = GGML_F16_VEC_LOAD(y + i + 0*GGML_F16_EPR, 0);
+        ay[1] = GGML_F16_VEC_LOAD(y + i + 1*GGML_F16_EPR, 1);
+
+        sum[0] = GGML_F16_VEC_FMA(sum[0], ax[0], ay[0]);
+        sum[1] = GGML_F16_VEC_FMA(sum[1], ax[1], ay[1]);
+
+        ax[2] = GGML_F16_VEC_LOAD(x + i + 2*GGML_F16_EPR, 2);
+        ax[3] = GGML_F16_VEC_LOAD(x + i + 3*GGML_F16_EPR, 3);
+
+        ay[2] = GGML_F16_VEC_LOAD(y + i + 2*GGML_F16_EPR, 2);
+        ay[3] = GGML_F16_VEC_LOAD(y + i + 3*GGML_F16_EPR, 3);
+
+        sum[2] = GGML_F16_VEC_FMA(sum[2], ax[2], ay[2]);
+        sum[3] = GGML_F16_VEC_FMA(sum[3], ax[3], ay[3]);
+#else
         for (int j = 0; j < GGML_F16_ARR; j++) {
             ax[j] = GGML_F16_VEC_LOAD(x + i + j*GGML_F16_EPR, j);
             ay[j] = GGML_F16_VEC_LOAD(y + i + j*GGML_F16_EPR, j);
 
             sum[j] = GGML_F16_VEC_FMA(sum[j], ax[j], ay[j]);
         }
+#endif
     }
 
     // reduce sum0..sum3 to sum0
@@ -1993,19 +2020,20 @@ inline static void ggml_vec_dot_f16_unroll(const int n, const int xs, float * re
 #if defined(GGML_SIMD)
     const int np = (n & ~(GGML_F16_STEP - 1));
 
-    GGML_F16_VEC sum[GGML_VEC_DOT_UNROLL][GGML_F16_ARR] = { { GGML_F16_VEC_ZERO } };
+    GGML_F16_VEC sum[GGML_VEC_DOT_UNROLL][GGML_F16_ARR];
 
     GGML_F16_VEC ax[GGML_F16_ARR];
     GGML_F16_VEC ay[GGML_F16_ARR];
 
     for (int i = 0; i < np; i += GGML_F16_STEP) {
+	// __builtin_prefetch(y+i+GGML_F16_STEP);
         for (int j = 0; j < GGML_F16_ARR; j++) {
             ay[j] = GGML_F16_VEC_LOAD(y + i + j*GGML_F16_EPR, j);
 
             for (int k = 0; k < GGML_VEC_DOT_UNROLL; ++k) {
                 ax[j] = GGML_F16_VEC_LOAD(x[k] + i + j*GGML_F16_EPR, j);
 
-                sum[k][j] = GGML_F16_VEC_FMA(sum[k][j], ax[j], ay[j]);
+                sum[k][j] = GGML_F16_VEC_FMA(i==0 ? GGML_F16_VEC_ZERO : sum[k][j], ax[j], ay[j]);
             }
         }
     }
